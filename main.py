@@ -1,6 +1,10 @@
 import streamlit as st
 import random
 
+# st.set_page_config()는 반드시 Streamlit 앱에서 가장 먼저 호출되는 Streamlit 명령이어야 합니다.
+# 따라서 import 문 바로 다음에 위치시킵니다.
+st.set_page_config(page_title="✨MBTI 기반 맞춤형 직업 탐색기✨", layout="centered", icon="💼")
+
 def get_job_recommendations(mbti_type):
     """
     MBTI 유형에 따른 직업 추천과 설명을 반환하는 함수
@@ -190,8 +194,6 @@ def get_job_recommendations(mbti_type):
     })
 
 # --- Streamlit 앱 구성 ---
-st.set_page_config(page_title="✨MBTI 기반 맞춤형 직업 탐색기✨", layout="centered", icon="💼")
-
 st.title("🌟 MBTI 유형별 맞춤형 직업 탐색기 🌟")
 st.markdown("""
 <style>
@@ -219,8 +221,8 @@ st.write("당신의 MBTI 유형을 선택하면, 당신의 성격에 딱 맞는 
 
 # MBTI 유형 선택 드롭다운
 mbti_options = [
-    "--- MBTI 유형을 선택해주세요 ---", "ISTJ", "ISFJ", "ISTP", "ISFP", "INTJ", "INFJ", 
-    "INTP", "INFP", "ESTJ", "ESFJ", "ESTP", "ESFP", "ENTJ", 
+    "--- MBTI 유형을 선택해주세요 ---", "ISTJ", "ISFJ", "ISTP", "ISFP", "INTJ", "INFJ",
+    "INTP", "INFP", "ESTJ", "ESFJ", "ESTP", "ESFP", "ENTJ",
     "ENFJ", "ENTP", "ENFP"
 ]
 selected_mbti = st.selectbox("🌈 당신의 MBTI 유형은 무엇인가요?", mbti_options)
@@ -231,20 +233,20 @@ if st.button("✨ 내게 딱 맞는 직업 추천받기! ✨"):
     else:
         # 풍선 효과! 🎈
         st.balloons()
-        
+
         mbti_info = get_job_recommendations(selected_mbti)
-        
+
         st.subheader(mbti_info["title"])
         st.write(f"👉 **{mbti_info['description']}**")
-        
+
         st.markdown("---")
         st.subheader("📋 추천 직업 목록과 왜 잘 맞는지 알아볼까요?")
-        
+
         for job_name, job_desc in mbti_info["jobs"]:
             st.markdown(f"#### 💼 **{job_name}**")
             st.write(f"_{job_desc}_")
             st.markdown("---")
-        
+
         st.info("💡 이 추천은 MBTI 유형의 일반적인 특성을 기반으로 하며, 당신의 개인적인 흥미, 능력, 그리고 경험에 따라 가장 적합한 직업은 달라질 수 있음을 기억해주세요! 😉")
 
 st.markdown("""
