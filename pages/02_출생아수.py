@@ -52,26 +52,36 @@ if uploaded_file is not None:
                         # 예상치 못한 패턴은 일단 제외
                         pass
 
-
         # 필요한 컬럼만 선택하고 컬럼명 변경
-        df_processed = df[['행정구역', '총인구수'] + age_columns].copy()
+        # '2025년05월_남_0세' 컬럼도 포함시켜야 하므로 컬럼 리스트에 추가
+        required_cols = ['행정구역', '총인구수', '2025년05월_남_0세'] + age_columns
+        df_processed = df[required_cols].copy()
         df_processed = df_processed.rename(columns=clean_age_columns_map)
 
+        # '2025년05월_남_0세' 기준으로 상위 5개 행정구역 추출
+        # '2025년05월_남_0세' 컬럼이 데이터에 없는 경우를 대비한 예외 처리
+        if '2025년05월_남_0세' in df_processed.columns:
+            df_top5 = df_processed.nlargest(5, '2025년05월_남_0세')
+        else:
+            st.warning("'2025년05월_남_0세' 컬럼이 데이터에 없습니다. '총인구수' 기준으로 상위 5개 지역을 표시합니다.")
+            df_top5 = df_processed.nlargest(5, '총인구수')
 
-        # '총인구수' 기준으로 상위 5개 행정구역 추출
-        df_top5 = df_processed.nlargest(5, '총인구수')
 
-        st.subheader("총인구수 상위 5개 행정구역")
-        st.dataframe(df_top5[['행정구역', '총인구수']])
+        st.subheader("2025년 5월 남성 0세 인구 상위 5개 행정구역")
+        # '2025년05월_남_0세' 컬럼을 함께 보여주기
+        if '2025년05월_남_0세' in df_top5.columns:
+            st.dataframe(df_top5[['행정구역', '2025년05월_남_0세']])
+        else:
+            st.dataframe(df_top5[['행정구역', '총인구수']]) # 대체 컬럼 표시
 
-        st.subheader("연령별 인구 분포 (상위 5개 행정구역)")
+
+        st.subheader("연령별 인구 분포 (남성 0세 인구 상위 5개 행정구역)")
 
         # 시각화를 위한 데이터 준비
         # 연령 컬럼만 선택
-        age_population_data = df_top5.set_index('행정구역').drop(columns=['총인구수'])
+        age_population_data = df_top5.set_index('행정구역').drop(columns=['총인구수', '2025년05월_남_0세'], errors='ignore')
 
         # 연령 컬럼의 순서를 정렬하기 위한 로직
-        # 숫자만 있는 연령을 먼저 정렬
         sorted_age_columns = []
         age_ranges_and_over = []
 
@@ -84,7 +94,6 @@ if uploaded_file is not None:
         sorted_age_columns.sort()
         sorted_age_columns_str = [f"{age}세" for age in sorted_age_columns]
 
-        # '0~9세'를 가장 먼저, '100세이상'을 가장 마지막에 오도록 처리
         final_sorted_columns = []
         if '0~9세' in age_ranges_and_over:
             final_sorted_columns.append('0~9세')
@@ -96,17 +105,22 @@ if uploaded_file is not None:
             final_sorted_columns.append('100세이상')
             age_ranges_and_over.remove('100세이상')
         
-        # 나머지 처리되지 않은 컬럼이 있다면 추가 (예외 상황 방지)
-        final_sorted_columns.extend(sorted(age_ranges_and_over))
-
+        final_sorted_columns.extend(sorted(age_ranges_and_over)) # 나머지 처리되지 않은 컬럼 추가
 
         # 실제 데이터프레임의 컬럼 순서 재정렬
         age_population_data_sorted = age_population_data[final_sorted_columns]
 
-        # 데이터프레임을 Plotly/Altair가 아닌 Streamlit 기본 line_chart에 맞게 변환
-        # 각 행정구역별로 시각화
+        # 데이터프레임을 Streamlit 기본 line_chart에 맞게 변환
         for index, row in age_population_data_sorted.iterrows():
-            st.subheader(f"{index}의 연령별 인구")
+            # 행정구역명 전처리: "서울특별시 ㅇㅇ구 ㅇㅇ동"에서 "ㅇㅇ동"만 추출
+            original_location_name = index
+            dong_name_match = re.search(r'\s([가-힣]+동)$', original_location_name)
+            if dong_name_match:
+                display_location_name = dong_name_match.group(1)
+            else:
+                display_location_name = original_location_name # 동 이름이 없으면 원본 유지
+
+            st.subheader(f"{display_location_name}의 연령별 인구")
             # Series를 데이터프레임으로 변환하여 st.line_chart에 전달
             chart_data = pd.DataFrame({'연령': row.index, '인구수': row.values})
             st.line_chart(chart_data, x='연령', y='인구수')
@@ -114,6 +128,8 @@ if uploaded_file is not None:
 
     except UnicodeDecodeError:
         st.error("파일 인코딩 오류! EUC-KR로 인코딩된 파일이 맞는지 확인해주세요.")
+    except KeyError as ke:
+        st.error(f"필수 컬럼이 데이터에 없습니다: {ke}. CSV 파일에 '2025년05월_남_0세' 컬럼이 있는지 확인해주세요.")
     except Exception as e:
         st.error(f"오류가 발생했습니다: {e}")
 else:
