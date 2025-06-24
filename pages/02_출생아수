@@ -1,62 +1,120 @@
 import streamlit as st
 import pandas as pd
-import os
 import re
 
-st.set_page_config(page_title="0세 인구 상위 동 분석", layout="wide")
+st.set_page_config(layout="wide")
 
-st.title("2025년 5월 0세 인구 기준 연령별 인구 분석")
-st.write("0세 인구가 많은 상위 5개 동의 전체 연령별 인구를 선 그래프로 시각화합니다.")
+# Streamlit 앱의 제목 설정
+st.title("2025년 5월 연령별 인구 현황 분석")
 
-# 기본 파일 경로
-default_file_path = "/mnt/data/202505_202505_연령별인구현황_월간.csv"
+# 파일 업로드 위젯
+uploaded_file = st.file_uploader("CSV 파일을 업로드해주세요 (EUC-KR 인코딩)", type=["csv"])
 
-# 파일 업로드 받기
-uploaded_file = st.file_uploader("📁 CSV 파일 업로드 (선택 사항)", type="csv")
-
-# 사용할 파일 결정
 if uploaded_file is not None:
-    st.success("✅ 업로드된 파일이 사용됩니다.")
-    file_to_use = uploaded_file
-elif os.path.exists(default_file_path):
-    st.info("ℹ️ 업로드된 파일이 없으므로 기본 파일을 사용합니다.")
-    file_to_use = default_file_path
+    try:
+        # EUC-KR 인코딩으로 파일 읽기
+        df = pd.read_csv(uploaded_file, encoding='EUC-KR')
+
+        st.subheader("원본 데이터")
+        st.dataframe(df)
+
+        # 컬럼명 전처리
+        # '2025년05월_계_'로 시작하는 컬럼만 선택하여 연령으로 변환
+        age_columns = [col for col in df.columns if col.startswith('2025년05월_계_')]
+        
+        # 새로운 컬럼 리스트 생성: '행정구역', '총인구수', 그리고 전처리된 연령 컬럼
+        processed_columns = ['행정구역', '총인구수']
+        clean_age_columns_map = {}
+
+        for col in age_columns:
+            # 숫자 부분만 추출 (예: '2025년05월_계_10세' -> '10')
+            match = re.search(r'(\d+)세', col)
+            if match:
+                age = match.group(1)
+                new_col_name = f"{age}세" # '10세', '20세' 등으로 유지
+                clean_age_columns_map[col] = new_col_name
+                processed_columns.append(new_col_name) # 전처리된 컬럼 이름 추가
+            else:
+                # '2025년05월_계_0_9세'와 같은 범위 처리
+                match_range = re.search(r'(\d+)_(\d+)세', col)
+                if match_range:
+                    age_range = f"{match_range.group(1)}~{match_range.group(2)}세"
+                    new_col_name = age_range
+                    clean_age_columns_map[col] = new_col_name
+                    processed_columns.append(new_col_name)
+                else:
+                    # '2025년05월_계_100세이상' 처리
+                    if '100세이상' in col:
+                        new_col_name = '100세이상'
+                        clean_age_columns_map[col] = new_col_name
+                        processed_columns.append(new_col_name)
+                    else:
+                        # 예상치 못한 패턴은 일단 제외
+                        pass
+
+
+        # 필요한 컬럼만 선택하고 컬럼명 변경
+        df_processed = df[['행정구역', '총인구수'] + age_columns].copy()
+        df_processed = df_processed.rename(columns=clean_age_columns_map)
+
+
+        # '총인구수' 기준으로 상위 5개 행정구역 추출
+        df_top5 = df_processed.nlargest(5, '총인구수')
+
+        st.subheader("총인구수 상위 5개 행정구역")
+        st.dataframe(df_top5[['행정구역', '총인구수']])
+
+        st.subheader("연령별 인구 분포 (상위 5개 행정구역)")
+
+        # 시각화를 위한 데이터 준비
+        # 연령 컬럼만 선택
+        age_population_data = df_top5.set_index('행정구역').drop(columns=['총인구수'])
+
+        # 연령 컬럼의 순서를 정렬하기 위한 로직
+        # 숫자만 있는 연령을 먼저 정렬
+        sorted_age_columns = []
+        age_ranges_and_over = []
+
+        for col in age_population_data.columns:
+            if re.match(r'^\d+세$', col): # '10세', '20세' 등
+                sorted_age_columns.append(int(re.search(r'(\d+)', col).group(1)))
+            else: # '0~9세', '100세이상' 등
+                age_ranges_and_over.append(col)
+        
+        sorted_age_columns.sort()
+        sorted_age_columns_str = [f"{age}세" for age in sorted_age_columns]
+
+        # '0~9세'를 가장 먼저, '100세이상'을 가장 마지막에 오도록 처리
+        final_sorted_columns = []
+        if '0~9세' in age_ranges_and_over:
+            final_sorted_columns.append('0~9세')
+            age_ranges_and_over.remove('0~9세')
+        
+        final_sorted_columns.extend(sorted_age_columns_str)
+
+        if '100세이상' in age_ranges_and_over:
+            final_sorted_columns.append('100세이상')
+            age_ranges_and_over.remove('100세이상')
+        
+        # 나머지 처리되지 않은 컬럼이 있다면 추가 (예외 상황 방지)
+        final_sorted_columns.extend(sorted(age_ranges_and_over))
+
+
+        # 실제 데이터프레임의 컬럼 순서 재정렬
+        age_population_data_sorted = age_population_data[final_sorted_columns]
+
+        # 데이터프레임을 Plotly/Altair가 아닌 Streamlit 기본 line_chart에 맞게 변환
+        # 각 행정구역별로 시각화
+        for index, row in age_population_data_sorted.iterrows():
+            st.subheader(f"{index}의 연령별 인구")
+            # Series를 데이터프레임으로 변환하여 st.line_chart에 전달
+            chart_data = pd.DataFrame({'연령': row.index, '인구수': row.values})
+            st.line_chart(chart_data, x='연령', y='인구수')
+
+
+    except UnicodeDecodeError:
+        st.error("파일 인코딩 오류! EUC-KR로 인코딩된 파일이 맞는지 확인해주세요.")
+    except Exception as e:
+        st.error(f"오류가 발생했습니다: {e}")
 else:
-    st.error("❌ 사용할 수 있는 CSV 파일이 없습니다.")
-    st.stop()
-
-# 데이터 읽기
-df = pd.read_csv(file_to_use, encoding="euc-kr")
-
-# 주요 열
-admin_col = "행정구역"
-age_prefix = "2025년05월_계_"
-age_cols = [col for col in df.columns if col.startswith(age_prefix) and ("세" in col or "100세 이상" in col)]
-age_col_0 = f"{age_prefix}0세"
-
-# 쉼표 제거 후 정수 변환
-for col in age_cols:
-    df[col] = df[col].astype(str).str.replace(",", "").astype(int)
-
-# 행정구역에서 '서울특별시 ㅇㅇ구' 제거 → 동 이름만 남기기
-df[admin_col] = df[admin_col].apply(lambda x: re.sub(r'^서울특별시\s+\S+\s+', '', x).strip())
-
-# 0세 인구가 많은 상위 5개 동 추출
-top5_df = df.sort_values(by=age_col_0, ascending=False).head(5)
-
-# 연령 라벨 정리
-age_labels = [col.replace(age_prefix, "") for col in age_cols]
-
-# 시각화용 데이터 구성
-plot_df = top5_df[[admin_col] + age_cols].copy()
-plot_df.columns = [admin_col] + age_labels
-plot_df = plot_df.set_index(admin_col).T
-plot_df.index.name = "연령"
-
-# 📊 그래프 출력
-st.subheader("📊 연령별 인구 선 그래프 (0세 인구 기준 상위 5개 동)")
-st.line_chart(plot_df)
-
-# 📄 원본 데이터 일부 표시
-st.subheader("🧾 원본 데이터 미리보기")
-st.dataframe(df[[admin_col, age_col_0] + age_cols[:5]])
+    st.info("CSV 파일을 업로드하여 분석을 시작하세요.")
